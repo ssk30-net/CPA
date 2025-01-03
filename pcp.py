@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import requests
-from bs4 import BeautifulSoup
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from keras.models import load_model
 
@@ -12,38 +11,31 @@ model = load_model('pitch_prediction_model.h5')
 encoder = LabelEncoder()
 scaler = StandardScaler()
 
-# AccuWeather API setup
-API_KEY = 'YOUR_ACCUWEATHER_API_KEY'  # Replace with your actual AccuWeather API key
-WEATHER_API_URL = 'http://dataservice.accuweather.com/currentconditions/v1/'
-LOCATIONS_API_URL = 'http://dataservice.accuweather.com/locations/v1/cities/search'
+# Example venue list for user selection
+venues = {
+    'Lords': 'London',
+    'Melbourne cricket stadium': 'Melbourne',
+    'Wankhede mumbai': 'Mumbai',
+    'Chepauk': 'Chennai'
+}
+
+# OpenWeatherMap API setup
+API_KEY = 'YOUR_OPENWEATHERMAP_API_KEY'  # Replace with your OpenWeatherMap API key
+WEATHER_API_URL = 'http://api.openweathermap.org/data/2.5/weather'
 
 
-# Function to fetch AccuWeather location key using stadium name
-def get_location_key(stadium_name):
-    params = {
-        'apikey': API_KEY,
-        'q': stadium_name
-    }
-    response = requests.get(LOCATIONS_API_URL, params=params)
-    if response.status_code == 200 and len(response.json()) > 0:
-        return response.json()[0]['Key']  # Return the first location key match
-    else:
-        print(f"Error fetching location key for {stadium_name}. Status code: {response.status_code}")
-        return None
-
-
-# Function to fetch real-time weather data from AccuWeather API
-def fetch_weather_data(location_key):
-    url = f"{WEATHER_API_URL}{location_key}?apikey={API_KEY}"
+# Function to fetch real-time weather data from OpenWeatherMap API
+def fetch_weather_data(city):
+    url = f"{WEATHER_API_URL}?q={city}&appid={API_KEY}&units=metric"  # units=metric for Celsius temperature
     response = requests.get(url)
 
     if response.status_code == 200:
-        weather_info = response.json()[0]
+        weather_info = response.json()
 
         # Extract relevant weather information
-        temperature = weather_info['Temperature']['Metric']['Value']
-        humidity = weather_info['RelativeHumidity']
-        wind_speed = weather_info['Wind']['Speed']['Metric']['Value']
+        temperature = weather_info['main']['temp']
+        humidity = weather_info['main']['humidity']
+        wind_speed = weather_info['wind']['speed']
 
         return temperature, humidity, wind_speed
     else:
@@ -51,48 +43,33 @@ def fetch_weather_data(location_key):
         return None, None, None
 
 
-# Function to web scrape match details from ESPNcricinfo
-def fetch_match_data(stadium_name):
-    # ESPNcricinfo URL (this is an example, you will need to modify based on the real URL)
-    url = f"https://www.espncricinfo.com/search/results?q={stadium_name}"
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, 'html.parser')
-
-    # Web scraping logic to find teams, pitch report, and run rate
-    # You may need to adjust the logic based on the ESPNcricinfo page structure
-    team1 = "Team 1 Name"  # Example: Extracted from the page
-    team2 = "Team 2 Name"  # Example: Extracted from the page
-    pitch_report = "good"  # Example: Extracted from the page
-    run_rate = 5.6  # Example: Extracted from the page
-
-    return team1, team2, pitch_report, run_rate
-
-
-# Function for user input and fetching data
+# Function for user input simulation and auto-fetch weather data based on venue
 def get_user_input():
-    # User inputs stadium
-    stadium_name = input("Enter the stadium name: ")
+    # User selects venue and other features like team, day, etc.
+    print("Select the venue from the following options:")
+    for idx, venue in enumerate(venues.keys()):
+        print(f"{idx}: {venue}")
+    venue_index = int(input("Enter the venue index: "))
+    venue_selected = list(venues.keys())[venue_index]
+    city_selected = venues[venue_selected]  # City corresponding to venue for weather data
 
-    # Fetch match data from ESPNcricinfo
-    team1, team2, pitch_report, run_rate = fetch_match_data(stadium_name)
-
-    # Fetch location key for weather data
-    location_key = get_location_key(stadium_name)
-    if location_key is None:
-        print("Error fetching location key for the stadium. Please try again.")
-        return None
-
-    # Fetch real-time weather data
-    temperature, humidity, wind_speed = fetch_weather_data(location_key)
-    if temperature is None:
-        print("Error fetching weather data. Please try again.")
-        return None
-
-    # Simulating day of match input
+    team1 = input("Enter Team 1: ")
+    team2 = input("Enter Team 2: ")
+    pitch_report = input("Enter Pitch Report (good/bad): ")
     day_of_match = int(input("Enter Day of the Match (1-5): "))
 
+    # Fetch real-time weather data using the selected venue's city
+    temperature, humidity, wind_speed = fetch_weather_data(city_selected)
+
+    if temperature is None:
+        print("Error in fetching weather data. Please try again.")
+        return None
+
+    # Simulating run rate input
+    run_rate = float(input("Enter Run Rate: "))
+
     return {
-        "venue": stadium_name,
+        "venue": venue_selected,
         "team1": team1,
         "team2": team2,
         "pitch_report": pitch_report,
@@ -112,4 +89,40 @@ def preprocess_input(data):
     df['team1'] = encoder.fit_transform(df['team1'])
     df['team2'] = encoder.fit_transform(df['team2'])
     df['pitch_report'] = encoder.fit_transform(df['pitch_report'])
-    df['day_of_match'] = df['day_of
+    df['day_of_match'] = df['day_of_match'].astype(int)
+
+    # Scale numeric features (use the same scaler as training)
+    df[['temperature', 'humidity', 'wind', 'run_rate']] = scaler.fit_transform(
+        df[['temperature', 'humidity', 'wind', 'run_rate']]
+    )
+
+    return df
+
+
+# Real-time prediction
+def predict_pitch_condition():
+    # Get user input
+    user_input = get_user_input()
+
+    if user_input is None:
+        print("Failed to get valid user input. Exiting.")
+        return
+
+    # Preprocess input
+    preprocessed_input = preprocess_input(user_input)
+
+    # Reshape input to match model's input shape (batch_size, timesteps, features)
+    input_reshaped = np.array(preprocessed_input).reshape(1, preprocessed_input.shape[1], 1)
+
+    # Make prediction
+    prediction = model.predict(input_reshaped)
+
+    # Decode and display the prediction (assuming binary classification: 'good' or 'bad')
+    if prediction > 0.5:
+        print("Predicted Pitch Condition: Good")
+    else:
+        print("Predicted Pitch Condition: Bad")
+
+
+# Run real-time pitch prediction with weather API integration
+predict_pitch_condition()
