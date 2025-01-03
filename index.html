@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pitch Condition Predictor</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Pitch Condition Predictor</h1>
+        <form action="/predict" method="post">
+            <h2>Manual Input</h2>
+            <label for="moisture">Moisture (%)</label>
+            <input type="number" step="0.01" name="moisture" id="moisture">
+
+            <label for="hardness">Hardness (%)</label>
+            <input type="number" step="0.01" name="hardness" id="hardness">
+
+            <label for="grass_cover">Grass Cover (%)</label>
+            <input type="number" step="0.01" name="grass_cover" id="grass_cover">
+
+            <h2>OR</h2>
+            <h3>Fetch Data from a Webpage</h3>
+            <label for="url">Webpage URL</label>
+            <input type="url" name="url" id="url" placeholder="Enter a webpage URL">
+
+            <button type="submit">Predict</button>
+        </form>
+
+        {% if prediction %}
+        <div class="result">
+            <p>{{ prediction }}</p>
+        </div>
+        {% endif %}
+
+        {% if error %}
+        <div class="error">
+            <p>{{ error }}</p>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
